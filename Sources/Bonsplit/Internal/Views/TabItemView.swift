@@ -2,6 +2,17 @@ import SwiftUI
 import AppKit
 import QuartzCore
 
+extension Color {
+    /// Parses a 6-digit hex RGB string (no leading "#") into a `Color`.
+    init?(hex: String) {
+        guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
+        let r = Double((value >> 16) & 0xFF) / 255
+        let g = Double((value >> 8) & 0xFF) / 255
+        let b = Double(value & 0xFF) / 255
+        self = Color(red: r, green: g, blue: b)
+    }
+}
+
 enum TabControlShortcutHintAnimation {
     static let visibility: Animation = .easeOut(duration: 0.12)
 }
@@ -50,6 +61,28 @@ private enum TabControlShortcutHintDebugSettings {
 enum TabItemStyling {
     static func iconSaturation(hasRasterIcon: Bool, tabSaturation: Double) -> Double {
         hasRasterIcon ? 1.0 : tabSaturation
+    }
+
+    /// Marker wrapping a 6-hex-digit RGB color code prefixed onto a tab title
+    /// (e.g. "\u{2}3AF199\u{2} rest of title"), used to render an arbitrary
+    /// per-tab color dot without changing the public `Tab` API. `\u{2}` (STX)
+    /// never appears in normal titles/paths.
+    private static let colorMarker: Character = "\u{2}"
+
+    /// Splits a leading `\u{2}RRGGBB\u{2}` color marker off a tab title,
+    /// returning the parsed color and the remaining title text. Falls back to
+    /// a leading emoji "dot" (legacy format) or no dot at all.
+    static func splitLeadingColorDot(_ title: String) -> (color: Color?, dot: String?, rest: String) {
+        if title.first == colorMarker,
+           let endIndex = title.dropFirst().firstIndex(of: colorMarker) {
+            let hex = title[title.index(after: title.startIndex)..<endIndex]
+            let rest = title[title.index(after: endIndex)...].trimmingCharacters(in: .whitespaces)
+            if let color = Color(hex: String(hex)) {
+                return (color, nil, rest)
+            }
+        }
+        let (dot, rest) = splitLeadingEmojiDot(title)
+        return (nil, dot, rest)
     }
 
     /// Splits a leading emoji "dot" (e.g. a color-square prefix) off a tab
@@ -179,9 +212,17 @@ struct TabItemView: View {
                 }
                 .onChange(of: tab.icon) { _ in updateGlobeFallback() }
 
-                let (titleDot, titleRest) = TabItemStyling.splitLeadingEmojiDot(tab.title)
-                HStack(spacing: titleDot == nil ? 0 : 4) {
-                    if let titleDot {
+                let (titleDotColor, titleDot, titleRest) = TabItemStyling.splitLeadingColorDot(tab.title)
+                HStack(spacing: (titleDotColor == nil && titleDot == nil) ? 0 : 4) {
+                    if let titleDotColor {
+                        // An arbitrary RGB color dot, rendered as a real filled
+                        // shape (not tinted text) so it isn't limited to the
+                        // handful of hues available as color-square emoji, and
+                        // stays full-color regardless of tab focus state.
+                        Circle()
+                            .fill(titleDotColor)
+                            .frame(width: appearance.tabTitleFontSize * 0.6, height: appearance.tabTitleFontSize * 0.6)
+                    } else if let titleDot {
                         // Keep the color-dot prefix at full saturation so it stays
                         // visually distinguishable even in an unfocused tab bar.
                         Text(titleDot)
