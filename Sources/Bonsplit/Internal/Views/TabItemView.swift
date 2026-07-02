@@ -52,6 +52,19 @@ enum TabItemStyling {
         hasRasterIcon ? 1.0 : tabSaturation
     }
 
+    /// Splits a leading emoji "dot" (e.g. a color-square prefix) off a tab
+    /// title so it can stay at full color/saturation even when the rest of
+    /// the title desaturates for an unfocused tab bar. Returns `nil` for the
+    /// dot when the title has no leading emoji.
+    static func splitLeadingEmojiDot(_ title: String) -> (dot: String?, rest: String) {
+        guard let first = title.unicodeScalars.first, first.properties.isEmoji, first.properties.isEmojiPresentation else {
+            return (nil, title)
+        }
+        let dot = String(title[title.startIndex..<title.index(after: title.startIndex)])
+        let rest = title.dropFirst().trimmingCharacters(in: .whitespaces)
+        return (dot, rest)
+    }
+
     static func shouldShowHoverBackground(isHovered: Bool, isSelected: Bool) -> Bool {
         isHovered && !isSelected
     }
@@ -166,15 +179,24 @@ struct TabItemView: View {
                 }
                 .onChange(of: tab.icon) { _ in updateGlobeFallback() }
 
-                Text(tab.title)
-                    .font(.system(size: appearance.tabTitleFontSize))
-                    .lineLimit(1)
-                    .foregroundStyle(
-                        isSelected
-                            ? TabBarColors.activeText(for: appearance)
-                            : TabBarColors.inactiveText(for: appearance)
-                    )
-                    .saturation(saturation)
+                let (titleDot, titleRest) = TabItemStyling.splitLeadingEmojiDot(tab.title)
+                HStack(spacing: titleDot == nil ? 0 : 4) {
+                    if let titleDot {
+                        // Keep the color-dot prefix at full saturation so it stays
+                        // visually distinguishable even in an unfocused tab bar.
+                        Text(titleDot)
+                            .font(.system(size: appearance.tabTitleFontSize))
+                    }
+                    Text(titleRest)
+                        .font(.system(size: appearance.tabTitleFontSize))
+                        .lineLimit(1)
+                        .foregroundStyle(
+                            isSelected
+                                ? TabBarColors.activeText(for: appearance)
+                                : TabBarColors.inactiveText(for: appearance)
+                        )
+                        .saturation(saturation)
+                }
 
                 // Chrome/Safari-style audio affordance: a speaker glyph appears
                 // when the tab is producing audible audio (click to mute) or has
