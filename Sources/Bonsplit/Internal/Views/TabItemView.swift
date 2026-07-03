@@ -12,19 +12,6 @@ extension Color {
         self = Color(red: r, green: g, blue: b)
     }
 
-    /// This color blended toward white by `amount` (0 = unchanged, 1 = white).
-    /// Used to visibly mute an unfocused tab's color chip. Unlike darkening,
-    /// blending toward white only ever *raises* luminance, so a chip that
-    /// already contrasts with black text at full color keeps contrasting
-    /// with black text once muted too.
-    func mutedTowardWhite(amount: CGFloat) -> Color {
-        let ns = NSColor(self).usingColorSpace(.deviceRGB) ?? NSColor(self)
-        return Color(
-            red: ns.redComponent + (1 - ns.redComponent) * amount,
-            green: ns.greenComponent + (1 - ns.greenComponent) * amount,
-            blue: ns.blueComponent + (1 - ns.blueComponent) * amount
-        )
-    }
 }
 
 enum TabControlShortcutHintAnimation {
@@ -137,6 +124,10 @@ enum TabItemStyling {
 struct TabItemView: View {
     let tab: TabItem
     let isSelected: Bool
+    /// Whether this tab's pane currently has keyboard focus (distinct from
+    /// `isSelected`, which just means "frontmost tab within its own pane" —
+    /// every visible pane has one, but only one pane in the window has focus).
+    let isFocusedPane: Bool
     let showsZoomIndicator: Bool
     let appearance: BonsplitConfiguration.Appearance
     /// When true, the tab drops its fixed maximum width and grows to fill the slack
@@ -227,37 +218,42 @@ struct TabItemView: View {
                 .onChange(of: tab.icon) { _ in updateGlobeFallback() }
 
                 let (titleDotColor, titleDot, titleRest) = TabItemStyling.splitLeadingColorDot(tab.title)
+                let titleFont = Font.system(size: appearance.tabTitleFontSize, weight: .semibold)
                 if let titleDotColor {
-                    // Paint the tab's assigned color behind the title as a chip,
-                    // with black/white text chosen for contrast against it.
-                    // Unfocused tabs mute strongly toward white rather than
-                    // darkening, so the chip reads as clearly dimmed/washed out
-                    // while luminance only ever increases — guaranteeing black
-                    // text always has contrast, focused or not.
-                    let chipColor = titleDotColor.mutedTowardWhite(amount: isSelected ? 0 : 0.9)
-                    Text(titleRest)
-                        .font(.system(size: appearance.tabTitleFontSize))
-                        .lineLimit(1)
-                        // Chip colors are generated light/pastel enough that
-                        // black text always has sufficient contrast; always use
-                        // black rather than computing contrast dynamically.
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(chipColor)
-                        )
+                    if isFocusedPane {
+                        // Focused pane: solid colored background chip, black
+                        // text (chip colors are generated light/pastel enough
+                        // that black always has sufficient contrast).
+                        Text(titleRest)
+                            .font(titleFont)
+                            .lineLimit(1)
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(titleDotColor)
+                            )
+                    } else {
+                        // Unfocused pane: no custom background — the tab bar's
+                        // normal default shows through — but the text itself is
+                        // tinted with the tab's assigned color, at the same full
+                        // opacity as the focused state (no dimming/fading).
+                        Text(titleRest)
+                            .font(titleFont)
+                            .lineLimit(1)
+                            .foregroundStyle(titleDotColor)
+                    }
                 } else {
                     HStack(spacing: titleDot == nil ? 0 : 4) {
                         if let titleDot {
                             // Keep the color-dot prefix at full saturation so it stays
                             // visually distinguishable even in an unfocused tab bar.
                             Text(titleDot)
-                                .font(.system(size: appearance.tabTitleFontSize))
+                                .font(titleFont)
                         }
                         Text(titleRest)
-                            .font(.system(size: appearance.tabTitleFontSize))
+                            .font(titleFont)
                             .lineLimit(1)
                             .foregroundStyle(
                                 isSelected

@@ -1332,6 +1332,7 @@ struct TabBarView: View {
         TabItemView(
             tab: tab,
             isSelected: pane.selectedTabId == tab.id,
+            isFocusedPane: isFocused,
             showsZoomIndicator: showsZoomIndicator,
             appearance: appearance,
             fillsWidth: fillsTabsToWidth,
