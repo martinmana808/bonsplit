@@ -11,6 +11,20 @@ extension Color {
         let b = Double(value & 0xFF) / 255
         self = Color(red: r, green: g, blue: b)
     }
+
+    /// This color blended toward white by `amount` (0 = unchanged, 1 = white).
+    /// Used to visibly mute an unfocused tab's color chip. Unlike darkening,
+    /// blending toward white only ever *raises* luminance, so a chip that
+    /// already contrasts with black text at full color keeps contrasting
+    /// with black text once muted too.
+    func mutedTowardWhite(amount: CGFloat) -> Color {
+        let ns = NSColor(self).usingColorSpace(.deviceRGB) ?? NSColor(self)
+        return Color(
+            red: ns.redComponent + (1 - ns.redComponent) * amount,
+            green: ns.greenComponent + (1 - ns.greenComponent) * amount,
+            blue: ns.blueComponent + (1 - ns.blueComponent) * amount
+        )
+    }
 }
 
 enum TabControlShortcutHintAnimation {
@@ -213,30 +227,45 @@ struct TabItemView: View {
                 .onChange(of: tab.icon) { _ in updateGlobeFallback() }
 
                 let (titleDotColor, titleDot, titleRest) = TabItemStyling.splitLeadingColorDot(tab.title)
-                HStack(spacing: (titleDotColor == nil && titleDot == nil) ? 0 : 4) {
-                    if let titleDotColor {
-                        // An arbitrary RGB color dot, rendered as a real filled
-                        // shape (not tinted text) so it isn't limited to the
-                        // handful of hues available as color-square emoji, and
-                        // stays full-color regardless of tab focus state.
-                        Circle()
-                            .fill(titleDotColor)
-                            .frame(width: appearance.tabTitleFontSize * 0.6, height: appearance.tabTitleFontSize * 0.6)
-                    } else if let titleDot {
-                        // Keep the color-dot prefix at full saturation so it stays
-                        // visually distinguishable even in an unfocused tab bar.
-                        Text(titleDot)
-                            .font(.system(size: appearance.tabTitleFontSize))
-                    }
+                if let titleDotColor {
+                    // Paint the tab's assigned color behind the title as a chip,
+                    // with black/white text chosen for contrast against it.
+                    // Unfocused tabs mute strongly toward white rather than
+                    // darkening, so the chip reads as clearly dimmed/washed out
+                    // while luminance only ever increases — guaranteeing black
+                    // text always has contrast, focused or not.
+                    let chipColor = titleDotColor.mutedTowardWhite(amount: isSelected ? 0 : 0.9)
                     Text(titleRest)
                         .font(.system(size: appearance.tabTitleFontSize))
                         .lineLimit(1)
-                        .foregroundStyle(
-                            isSelected
-                                ? TabBarColors.activeText(for: appearance)
-                                : TabBarColors.inactiveText(for: appearance)
+                        // Chip colors are generated light/pastel enough that
+                        // black text always has sufficient contrast; always use
+                        // black rather than computing contrast dynamically.
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(chipColor)
                         )
-                        .saturation(saturation)
+                } else {
+                    HStack(spacing: titleDot == nil ? 0 : 4) {
+                        if let titleDot {
+                            // Keep the color-dot prefix at full saturation so it stays
+                            // visually distinguishable even in an unfocused tab bar.
+                            Text(titleDot)
+                                .font(.system(size: appearance.tabTitleFontSize))
+                        }
+                        Text(titleRest)
+                            .font(.system(size: appearance.tabTitleFontSize))
+                            .lineLimit(1)
+                            .foregroundStyle(
+                                isSelected
+                                    ? TabBarColors.activeText(for: appearance)
+                                    : TabBarColors.inactiveText(for: appearance)
+                            )
+                            .saturation(saturation)
+                    }
                 }
 
                 // Chrome/Safari-style audio affordance: a speaker glyph appears
