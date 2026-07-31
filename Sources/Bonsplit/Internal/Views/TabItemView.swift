@@ -220,30 +220,20 @@ struct TabItemView: View {
                 let (titleDotColor, titleDot, titleRest) = TabItemStyling.splitLeadingColorDot(tab.title)
                 let titleFont = Font.system(size: appearance.tabTitleFontSize, weight: .semibold)
                 if let titleDotColor {
-                    if isFocusedPane {
-                        // Focused pane: solid colored background chip, black
-                        // text (chip colors are generated light/pastel enough
-                        // that black always has sufficient contrast).
-                        Text(titleRest)
-                            .font(titleFont)
-                            .lineLimit(1)
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(titleDotColor)
-                            )
-                    } else {
-                        // Unfocused pane: no custom background — the tab bar's
-                        // normal default shows through — but the text itself is
-                        // tinted with the tab's assigned color, at the same full
-                        // opacity as the focused state (no dimming/fading).
-                        Text(titleRest)
-                            .font(titleFont)
-                            .lineLimit(1)
-                            .foregroundStyle(titleDotColor)
-                    }
+                    // Every tab — focused pane or not, selected or not — renders
+                    // its assigned color as a solid background chip with black
+                    // text (chip colors are generated light/pastel enough that
+                    // black always has sufficient contrast).
+                    Text(titleRest)
+                        .font(titleFont)
+                        .lineLimit(1)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(titleDotColor)
+                        )
                 } else {
                     HStack(spacing: titleDot == nil ? 0 : 4) {
                         if let titleDot {
