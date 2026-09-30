@@ -732,14 +732,21 @@ struct TabBarChromeSnapshot {
         layout: TabBarLayout,
         isFocused: Bool,
         shouldShowSplitButtons: Bool,
-        fadeColorStyle: Int
+        fadeColorStyle: Int,
+        focusedPaneAccentColor: NSColor? = nil
     ) {
         self.layout = layout
 
         let baseBarColor = TabBarColors.nsColorBarBackground(for: appearance)
-        self.barColor = appearance.usesSharedBackdrop || isFocused
-            ? baseBarColor
-            : baseBarColor.withAlphaComponent(baseBarColor.alphaComponent * 0.95)
+        // The focused pane's whole strip takes its selected tab's identity
+        // color so the active pane reads as one colored block.
+        if isFocused, let focusedPaneAccentColor {
+            self.barColor = focusedPaneAccentColor
+        } else {
+            self.barColor = appearance.usesSharedBackdrop || isFocused
+                ? baseBarColor
+                : baseBarColor.withAlphaComponent(baseBarColor.alphaComponent * 0.95)
+        }
 
         let effect = Self.splitButtonBackdropEffect(
             for: appearance,
@@ -1013,7 +1020,22 @@ struct TabBarView: View {
             layout: tabBarLayout,
             isFocused: isFocused,
             shouldShowSplitButtons: shouldShowSplitButtons,
-            fadeColorStyle: fadeColorStyle
+            fadeColorStyle: fadeColorStyle,
+            focusedPaneAccentColor: selectedTabAccentColor
+        )
+    }
+
+    /// The identity color carried by the selected tab's title marker, if any.
+    private var selectedTabAccentColor: NSColor? {
+        guard let selectedTabId = pane.selectedTabId,
+              let tab = pane.tabs.first(where: { $0.id == selectedTabId }),
+              let hex = TabItemStyling.leadingColorHex(tab.title),
+              let value = UInt32(hex, radix: 16) else { return nil }
+        return NSColor(
+            calibratedRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1
         )
     }
 

@@ -69,21 +69,75 @@ enum TabItemStyling {
     /// per-tab color dot without changing the public `Tab` API. `\u{2}` (STX)
     /// never appears in normal titles/paths.
     private static let colorMarker: Character = "\u{2}"
+    /// Marker wrapping the Unix timestamp (whole seconds) of the last time the
+    /// tab's pane held focus, e.g. "\u{3}1790000000\u{3}". Follows the color
+    /// marker. `\u{3}` (ETX) never appears in normal titles.
+    private static let focusedAtMarker: Character = "\u{3}"
 
     /// Splits a leading `\u{2}RRGGBB\u{2}` color marker off a tab title,
     /// returning the parsed color and the remaining title text. Falls back to
-    /// a leading emoji "dot" (legacy format) or no dot at all.
+    /// a leading emoji "dot" (legacy format) or no dot at all. Any last-focus
+    /// marker is stripped as well; use ``splitLeadingMarkers`` to read it.
     static func splitLeadingColorDot(_ title: String) -> (color: Color?, dot: String?, rest: String) {
-        if title.first == colorMarker,
-           let endIndex = title.dropFirst().firstIndex(of: colorMarker) {
-            let hex = title[title.index(after: title.startIndex)..<endIndex]
-            let rest = title[title.index(after: endIndex)...].trimmingCharacters(in: .whitespaces)
-            if let color = Color(hex: String(hex)) {
-                return (color, nil, rest)
+        let markers = splitLeadingMarkers(title)
+        return (markers.color, markers.dot, markers.rest)
+    }
+
+    /// The 6-hex-digit color carried by a title's leading color marker, if any.
+    static func leadingColorHex(_ title: String) -> String? {
+        guard title.first == colorMarker,
+              let endIndex = title.dropFirst().firstIndex(of: colorMarker) else { return nil }
+        let hex = String(title[title.index(after: title.startIndex)..<endIndex])
+        return hex.count == 6 && hex.allSatisfy(\.isHexDigit) ? hex : nil
+    }
+
+    /// Splits the leading color and last-focus markers off a tab title.
+    static func splitLeadingMarkers(_ title: String) -> (color: Color?, dot: String?, lastFocusedAt: Date?, rest: String) {
+        var remainder = Substring(title)
+        var color: Color?
+        if remainder.first == colorMarker,
+           let endIndex = remainder.dropFirst().firstIndex(of: colorMarker) {
+            let hex = remainder[remainder.index(after: remainder.startIndex)..<endIndex]
+            if let parsed = Color(hex: String(hex)) {
+                color = parsed
+                remainder = remainder[remainder.index(after: endIndex)...]
             }
         }
-        let (dot, rest) = splitLeadingEmojiDot(title)
-        return (nil, dot, rest)
+        var lastFocusedAt: Date?
+        if remainder.first == focusedAtMarker,
+           let endIndex = remainder.dropFirst().firstIndex(of: focusedAtMarker) {
+            let digits = remainder[remainder.index(after: remainder.startIndex)..<endIndex]
+            if let seconds = TimeInterval(digits) {
+                lastFocusedAt = Date(timeIntervalSince1970: seconds)
+                remainder = remainder[remainder.index(after: endIndex)...]
+            }
+        }
+        let rest = remainder.trimmingCharacters(in: .whitespaces)
+        if color != nil {
+            return (color, nil, lastFocusedAt, rest)
+        }
+        let (dot, emojiRest) = splitLeadingEmojiDot(rest)
+        return (nil, dot, lastFocusedAt, emojiRest)
+    }
+
+    /// Compact "time since last focus" label: "now", "4m", "3h", "2d".
+    static func focusAgeLabel(since lastFocusedAt: Date, now: Date) -> String {
+        let seconds = max(0, now.timeIntervalSince(lastFocusedAt))
+        if seconds < 60 { return "now" }
+        if seconds < 3600 { return "\(Int(seconds / 60))m" }
+        if seconds < 86_400 { return "\(Int(seconds / 3600))h" }
+        return "\(Int(seconds / 86_400))d"
+    }
+
+    /// Chip opacity by age: full for the last 10 minutes, then easing down to
+    /// 0.45 by 24 hours so stale panes recede while fresh ones stay vivid.
+    static func focusAgeOpacity(since lastFocusedAt: Date, now: Date) -> Double {
+        let seconds = max(0, now.timeIntervalSince(lastFocusedAt))
+        let freshWindow = 600.0
+        let staleWindow = 86_400.0
+        guard seconds > freshWindow else { return 1.0 }
+        let progress = min(1.0, log10(seconds / freshWindow) / log10(staleWindow / freshWindow))
+        return 1.0 - 0.55 * progress
     }
 
     /// Splits a leading emoji "dot" (e.g. a color-square prefix) off a tab
@@ -217,23 +271,39 @@ struct TabItemView: View {
                 }
                 .onChange(of: tab.icon) { _ in updateGlobeFallback() }
 
-                let (titleDotColor, titleDot, titleRest) = TabItemStyling.splitLeadingColorDot(tab.title)
+                let (titleDotColor, titleDot, lastFocusedAt, titleRest) = TabItemStyling.splitLeadingMarkers(tab.title)
                 let titleFont = Font.system(size: appearance.tabTitleFontSize, weight: .semibold)
                 if let titleDotColor {
                     // Every tab — focused pane or not, selected or not — renders
                     // its assigned color as a solid background chip with black
                     // text (chip colors are generated light/pastel enough that
-                    // black always has sufficient contrast).
-                    Text(titleRest)
-                        .font(titleFont)
-                        .lineLimit(1)
-                        .foregroundStyle(.black)
+                    // black always has sufficient contrast). When the host
+                    // supplies a last-focus time, the chip carries an age badge
+                    // and fades as the pane goes stale; the badge re-renders
+                    // once a minute.
+                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                        let ageLabel = lastFocusedAt.map { TabItemStyling.focusAgeLabel(since: $0, now: timeline.date) }
+                        let ageOpacity = lastFocusedAt.map { TabItemStyling.focusAgeOpacity(since: $0, now: timeline.date) } ?? 1.0
+                        HStack(spacing: 5) {
+                            Text(titleRest)
+                                .font(titleFont)
+                                .lineLimit(1)
+                                .foregroundStyle(.black)
+                            if let ageLabel {
+                                Text(ageLabel)
+                                    .font(Font.system(size: max(8, appearance.tabTitleFontSize - 3), weight: .bold).monospacedDigit())
+                                    .foregroundStyle(.black.opacity(0.62))
+                                    .lineLimit(1)
+                                    .fixedSize()
+                            }
+                        }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(titleDotColor)
+                                .fill(titleDotColor.opacity(ageOpacity))
                         )
+                    }
                 } else {
                     HStack(spacing: titleDot == nil ? 0 : 4) {
                         if let titleDot {
