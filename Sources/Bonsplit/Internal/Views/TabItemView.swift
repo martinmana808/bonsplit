@@ -59,6 +59,20 @@ private enum TabControlShortcutHintDebugSettings {
     }
 }
 
+/// Foreground override for everything drawn on a tab bar strip that is painted
+/// with a pane's identity color (focused pane): icons, close/pin/zoom buttons,
+/// badges and split actions turn black so they read on pastel.
+private struct BonsplitAccentStripForegroundKey: EnvironmentKey {
+    static let defaultValue: Color? = nil
+}
+
+extension EnvironmentValues {
+    var bonsplitAccentStripForeground: Color? {
+        get { self[BonsplitAccentStripForegroundKey.self] }
+        set { self[BonsplitAccentStripForegroundKey.self] = newValue }
+    }
+}
+
 enum TabItemStyling {
     static func iconSaturation(hasRasterIcon: Bool, tabSaturation: Double) -> Double {
         hasRasterIcon ? 1.0 : tabSaturation
@@ -182,6 +196,13 @@ struct TabItemView: View {
     /// `isSelected`, which just means "frontmost tab within its own pane" —
     /// every visible pane has one, but only one pane in the window has focus).
     let isFocusedPane: Bool
+    @Environment(\.bonsplitAccentStripForeground) private var accentStripForeground: Color?
+
+    /// Text/icon color on the strip: the accent override when the pane's strip
+    /// is painted with its identity color, otherwise the theme color.
+    private func stripText(_ base: Color) -> Color {
+        accentStripForeground ?? base
+    }
     let showsZoomIndicator: Bool
     let appearance: BonsplitConfiguration.Appearance
     /// When true, the tab drops its fixed maximum width and grows to fill the slack
@@ -221,9 +242,9 @@ struct TabItemView: View {
             // Icon + title block uses the standard spacing, but keep the close affordance tight.
             HStack(spacing: scaledContentSpacing) {
                 let iconSlotSize = scaledIconSize
-                let iconTintColor = isSelected
+                let iconTintColor = accentStripForeground.map { NSColor($0) } ?? (isSelected
                     ? TabBarColors.nsColorActiveText(for: appearance)
-                    : TabBarColors.nsColorInactiveText(for: appearance)
+                    : TabBarColors.nsColorInactiveText(for: appearance))
                 let iconTint = Color(nsColor: iconTintColor)
                 let faviconImage = renderedFaviconImage ?? tab.iconImageData.flatMap { NSImage(data: $0) }
 
@@ -317,8 +338,8 @@ struct TabItemView: View {
                             .lineLimit(1)
                             .foregroundStyle(
                                 isSelected
-                                    ? TabBarColors.activeText(for: appearance)
-                                    : TabBarColors.inactiveText(for: appearance)
+                                    ? stripText(TabBarColors.activeText(for: appearance))
+                                    : stripText(TabBarColors.inactiveText(for: appearance))
                             )
                             .saturation(saturation)
                     }
@@ -344,11 +365,11 @@ struct TabItemView: View {
                             .foregroundStyle(
                                 isAudioHovered
                                     ? (isSelected
-                                        ? TabBarColors.activeText(for: appearance)
-                                        : TabBarColors.inactiveText(for: appearance))
+                                        ? stripText(TabBarColors.activeText(for: appearance))
+                                        : stripText(TabBarColors.inactiveText(for: appearance)))
                                     : (isSelected
-                                        ? TabBarColors.activeText(for: appearance)
-                                        : TabBarColors.inactiveText(for: appearance))
+                                        ? stripText(TabBarColors.activeText(for: appearance))
+                                        : stripText(TabBarColors.inactiveText(for: appearance)))
                                         .opacity(0.78)
                             )
                             .frame(width: accessorySlotSize, height: accessorySlotSize)
@@ -381,8 +402,8 @@ struct TabItemView: View {
                             .font(.system(size: accessoryFontSize, weight: .semibold))
                             .foregroundStyle(
                                 isZoomHovered
-                                    ? TabBarColors.activeText(for: appearance)
-                                    : TabBarColors.inactiveText(for: appearance)
+                                    ? stripText(TabBarColors.activeText(for: appearance))
+                                    : stripText(TabBarColors.inactiveText(for: appearance))
                             )
                             .frame(width: accessorySlotSize, height: accessorySlotSize)
                             .background(
@@ -562,8 +583,8 @@ struct TabItemView: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .foregroundStyle(
                         isSelected
-                            ? TabBarColors.activeText(for: appearance)
-                            : TabBarColors.inactiveText(for: appearance)
+                            ? stripText(TabBarColors.activeText(for: appearance))
+                            : stripText(TabBarColors.inactiveText(for: appearance))
                     )
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
@@ -698,7 +719,7 @@ struct TabItemView: View {
                 if isSelected || isHovered || isCloseHovered || (!tab.isDirty && !tab.showsNotificationBadge) {
                     Image(systemName: "pin.fill")
                         .font(.system(size: scaledCloseIconSize, weight: .semibold))
-                        .foregroundStyle(TabBarColors.inactiveText(for: appearance))
+                        .foregroundStyle(stripText(TabBarColors.inactiveText(for: appearance)))
                         .frame(width: accessorySlotSize, height: accessorySlotSize)
                         .saturation(saturation)
                 }
@@ -711,8 +732,8 @@ struct TabItemView: View {
                         .font(.system(size: scaledCloseIconSize, weight: .semibold))
                         .foregroundStyle(
                             isCloseHovered
-                                ? TabBarColors.activeText(for: appearance)
-                                : TabBarColors.inactiveText(for: appearance)
+                                ? stripText(TabBarColors.activeText(for: appearance))
+                                : stripText(TabBarColors.inactiveText(for: appearance))
                         )
                         .frame(width: accessorySlotSize, height: accessorySlotSize)
                         .background(

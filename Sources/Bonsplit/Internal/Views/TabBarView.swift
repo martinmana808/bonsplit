@@ -942,6 +942,7 @@ struct TabBarView: View {
     @Bindable var pane: PaneState
     let isFocused: Bool
     var showSplitButtons: Bool = true
+    @Environment(\.bonsplitAccentStripForeground) private var accentStripForeground: Color?
 
     @AppStorage("workspacePresentationMode") private var presentationMode = "standard"
     @AppStorage("debugFadeColorStyle") private var fadeColorStyle = -1
@@ -1249,6 +1250,7 @@ struct TabBarView: View {
         .frame(height: tabBarHeight)
         .coordinateSpace(name: "tabBar")
         .background(tabBarSurface)
+        .environment(\.bonsplitAccentStripForeground, isFocused && selectedTabAccentColor != nil ? Color.black : nil)
         .overlay(maskedSelectedTabIndicatorChrome)
         .overlay(alignment: .trailing) {
             splitButtonBackdropChrome
@@ -1825,7 +1827,7 @@ struct TabBarView: View {
             splitActionButtonIcon(button.icon)
                 .frame(height: tabBarLayout.splitActionButtonHeight)
                 .contentShape(Rectangle())
-                .foregroundStyle(TabBarColors.splitActionIcon(for: appearance, isPressed: false))
+                .foregroundStyle(accentStripForeground ?? TabBarColors.splitActionIcon(for: appearance, isPressed: false))
                 .tabBarButtonAnimationsDisabled()
                 .overlay(
                     SplitActionMouseDownOverlay {
@@ -2158,12 +2160,13 @@ private final class SplitActionButtonImageCache {
 private struct SplitActionButtonStyle: ButtonStyle {
     let appearance: BonsplitConfiguration.Appearance
     let layout: TabBarLayout
+    @Environment(\.bonsplitAccentStripForeground) private var accentStripForeground: Color?
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(height: layout.splitActionButtonHeight)
             .contentShape(Rectangle())
-            .foregroundStyle(TabBarColors.splitActionIcon(for: appearance, isPressed: configuration.isPressed))
+            .foregroundStyle(accentStripForeground ?? TabBarColors.splitActionIcon(for: appearance, isPressed: configuration.isPressed))
             .opacity(configuration.isPressed ? 0.72 : 1.0)
             .tabBarButtonAnimationsDisabled()
     }
