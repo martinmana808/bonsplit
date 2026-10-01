@@ -942,7 +942,12 @@ struct TabBarView: View {
     @Bindable var pane: PaneState
     let isFocused: Bool
     var showSplitButtons: Bool = true
-    @Environment(\.bonsplitAccentStripForeground) private var accentStripForeground: Color?
+    /// Black foregrounds for the strip's own chrome when the focused pane's
+    /// strip is painted with its identity color (subviews get it via the
+    /// environment; this view reads it directly).
+    private var accentStripForeground: Color? {
+        isFocused && selectedTabAccentColor != nil ? Color.black : nil
+    }
 
     @AppStorage("workspacePresentationMode") private var presentationMode = "standard"
     @AppStorage("debugFadeColorStyle") private var fadeColorStyle = -1
@@ -1250,7 +1255,7 @@ struct TabBarView: View {
         .frame(height: tabBarHeight)
         .coordinateSpace(name: "tabBar")
         .background(tabBarSurface)
-        .environment(\.bonsplitAccentStripForeground, isFocused && selectedTabAccentColor != nil ? Color.black : nil)
+        .environment(\.bonsplitAccentStripForeground, accentStripForeground)
         .overlay(maskedSelectedTabIndicatorChrome)
         .overlay(alignment: .trailing) {
             splitButtonBackdropChrome
