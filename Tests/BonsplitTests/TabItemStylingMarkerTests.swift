@@ -43,17 +43,18 @@ final class TabItemStylingMarkerTests: XCTestCase {
         XCTAssertEqual(label(2 * 86_400 + 100), "2d")
     }
 
-    func testFocusAgeOpacityFadesMonotonically() {
+    func testFocusAgeFillIsLogarithmicAndEmptiesAtTwoWeeks() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        func opacity(_ ago: TimeInterval) -> Double {
-            TabItemStyling.focusAgeOpacity(since: now.addingTimeInterval(-ago), now: now)
+        func fill(_ ago: TimeInterval) -> Double {
+            TabItemStyling.focusAgeFill(since: now.addingTimeInterval(-ago), now: now)
         }
-        XCTAssertEqual(opacity(0), 1.0)
-        XCTAssertEqual(opacity(9 * 60), 1.0)
-        XCTAssertLessThan(opacity(3600), 1.0)
-        XCTAssertGreaterThan(opacity(3600), opacity(6 * 3600))
-        XCTAssertGreaterThan(opacity(6 * 3600), opacity(86_400))
-        XCTAssertEqual(opacity(86_400), 0.45, accuracy: 0.001)
-        XCTAssertEqual(opacity(7 * 86_400), 0.45, accuracy: 0.001, "never fades below the floor")
+        XCTAssertEqual(fill(0), 1.0)
+        XCTAssertEqual(fill(9 * 60), 1.0, "fresh for the first 10 minutes")
+        XCTAssertEqual(fill(3600), 0.765, accuracy: 0.01, "about three quarters at an hour")
+        XCTAssertEqual(fill(6 * 3600), 0.53, accuracy: 0.01, "about half at six hours")
+        XCTAssertEqual(fill(86_400), 0.35, accuracy: 0.01, "about a third at a day")
+        XCTAssertGreaterThan(fill(3 * 86_400), fill(7 * 86_400))
+        XCTAssertEqual(fill(14 * 86_400), 0.0, accuracy: 0.0001, "empty at two weeks")
+        XCTAssertEqual(fill(60 * 86_400), 0.0, "never negative")
     }
 }

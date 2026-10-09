@@ -143,15 +143,19 @@ enum TabItemStyling {
         return "\(Int(seconds / 86_400))d"
     }
 
-    /// Chip opacity by age: full for the last 10 minutes, then easing down to
-    /// 0.45 by 24 hours so stale panes recede while fresh ones stay vivid.
-    static func focusAgeOpacity(since lastFocusedAt: Date, now: Date) -> Double {
+    /// Age window the chip's gauge spans: the fill is full for the first
+    /// 10 minutes and empty at 14 days, on a log scale so the hours that
+    /// matter get most of the width (about 75% at 1h, 50% at 6h, 35% at a day).
+    static let focusAgeFreshWindow: TimeInterval = 600
+    static let focusAgeEmptyWindow: TimeInterval = 14 * 86_400
+
+    /// Fraction of the chip still painted with the pane color, 1 (fresh) to
+    /// 0 (two weeks or older).
+    static func focusAgeFill(since lastFocusedAt: Date, now: Date) -> Double {
         let seconds = max(0, now.timeIntervalSince(lastFocusedAt))
-        let freshWindow = 600.0
-        let staleWindow = 86_400.0
-        guard seconds > freshWindow else { return 1.0 }
-        let progress = min(1.0, log10(seconds / freshWindow) / log10(staleWindow / freshWindow))
-        return 1.0 - 0.55 * progress
+        guard seconds > focusAgeFreshWindow else { return 1.0 }
+        let progress = log10(seconds / focusAgeFreshWindow) / log10(focusAgeEmptyWindow / focusAgeFreshWindow)
+        return max(0.0, 1.0 - min(1.0, progress))
     }
 
     /// Splits a leading emoji "dot" (e.g. a color-square prefix) off a tab
@@ -296,34 +300,14 @@ struct TabItemView: View {
                 let titleFont = Font.system(size: appearance.tabTitleFontSize, weight: .semibold)
                 if let titleDotColor {
                     // Every tab — focused pane or not, selected or not — renders
-                    // its assigned color as a solid background chip with black
-                    // text (chip colors are generated light/pastel enough that
-                    // black always has sufficient contrast). When the host
-                    // supplies a last-focus time, the chip carries an age badge
-                    // and fades as the pane goes stale; the badge re-renders
-                    // once a minute.
+                    // its assigned color as a chip. When the host supplies a
+                    // last-focus time the chip is an age gauge: the color fill
+                    // shrinks from the right as the pane goes stale (black text
+                    // over the fill, tab-colored text past it) inside a stroke
+                    // that keeps the chip's full outline. Re-renders once a minute.
                     TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                        let ageLabel = lastFocusedAt.map { TabItemStyling.focusAgeLabel(since: $0, now: timeline.date) }
-                        let ageOpacity = lastFocusedAt.map { TabItemStyling.focusAgeOpacity(since: $0, now: timeline.date) } ?? 1.0
-                        HStack(spacing: 5) {
-                            Text(titleRest)
-                                .font(titleFont)
-                                .lineLimit(1)
-                                .foregroundStyle(.black)
-                            if let ageLabel {
-                                Text(ageLabel)
-                                    .font(Font.system(size: max(8, appearance.tabTitleFontSize - 3), weight: .bold).monospacedDigit())
-                                    .foregroundStyle(.black.opacity(0.62))
-                                    .lineLimit(1)
-                                    .fixedSize()
-                            }
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(titleDotColor.opacity(ageOpacity))
-                        )
+                        let fill = lastFocusedAt.map { TabItemStyling.focusAgeFill(since: $0, now: timeline.date) } ?? 1.0
+                        TabAgeGaugeChip(title: titleRest, font: titleFont, color: titleDotColor, fill: fill)
                     }
                 } else {
                     HStack(spacing: titleDot == nil ? 0 : 4) {
@@ -1447,5 +1431,46 @@ private struct TabContextMenuPresenter: NSViewRepresentable {
         context.coordinator.snapshot = snapshot
         context.coordinator.actionTarget.onContextAction = onContextAction
         context.coordinator.actionTarget.onMoveDestination = onMoveDestination
+    }
+}
+
+
+/// A tab title chip whose colored fill shrinks from the right with age.
+/// Text over the fill is black; text past it takes the chip color, so the
+/// title stays legible at every fill level. The stroke always spans the
+/// whole chip so the outline reads as the "full" extent of the gauge.
+struct TabAgeGaugeChip: View {
+    let title: String
+    let font: Font
+    let color: Color
+    /// 1 = fully painted, 0 = outline only.
+    let fill: Double
+
+    var body: some View {
+        let label = Text(title).font(font).lineLimit(1)
+        ZStack(alignment: .leading) {
+            label
+                .foregroundStyle(color)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+            label
+                .foregroundStyle(.black)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(color)
+                )
+                .mask(alignment: .leading) {
+                    GeometryReader { geometry in
+                        Rectangle()
+                            .frame(width: max(0, geometry.size.width * CGFloat(min(1, max(0, fill)))))
+                    }
+                }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .strokeBorder(color, lineWidth: 1)
+        )
     }
 }
