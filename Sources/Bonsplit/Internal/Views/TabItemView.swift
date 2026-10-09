@@ -312,7 +312,15 @@ struct TabItemView: View {
                     // that keeps the chip's full outline. Re-renders once a minute.
                     TimelineView(.periodic(from: .now, by: 60)) { timeline in
                         let fill = lastFocusedAt.map { TabItemStyling.focusAgeFill(since: $0, now: timeline.date) } ?? 1.0
-                        TabAgeGaugeChip(title: titleRest, font: titleFont, color: titleDotColor, fill: fill)
+                        // On the focused pane's colored strip the chip color is the
+                        // strip color, so the text past the fill goes black there.
+                        TabAgeGaugeChip(
+                            title: titleRest,
+                            font: titleFont,
+                            color: titleDotColor,
+                            fill: fill,
+                            textColorPastFill: accentStripForeground ?? titleDotColor
+                        )
                     }
                 } else {
                     HStack(spacing: titleDot == nil ? 0 : 4) {
@@ -1450,12 +1458,15 @@ struct TabAgeGaugeChip: View {
     let color: Color
     /// 1 = fully painted, 0 = outline only.
     let fill: Double
+    /// Color of the title where the fill has receded (the chip color on a
+    /// dark strip; black on a strip painted in the chip color).
+    var textColorPastFill: Color? = nil
 
     var body: some View {
         let label = Text(title).font(font).lineLimit(1)
         ZStack(alignment: .leading) {
             label
-                .foregroundStyle(color)
+                .foregroundStyle(textColorPastFill ?? color)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
             label
