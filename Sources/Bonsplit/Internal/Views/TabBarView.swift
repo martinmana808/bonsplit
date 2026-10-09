@@ -2010,9 +2010,21 @@ struct TabBarView: View {
 
     @ViewBuilder
     private var tabBarSurface: some View {
-        TabBarLayerBackedColor(color: chromeSnapshot.barColor)
-            .frame(maxWidth: .infinity)
-            .frame(height: tabBarHeight)
+        ZStack {
+            if let accent = selectedTabAccentColor, isFocused {
+                // The focused pane's strip is one side-to-side pill in its tab
+                // color: same corner radius as the chips, 1pt inset from the
+                // bar edges, over the normal bar background.
+                TabBarLayerBackedColor(color: TabBarColors.nsColorBarBackground(for: appearance))
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color(nsColor: accent))
+                    .padding(1)
+            } else {
+                TabBarLayerBackedColor(color: chromeSnapshot.barColor)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: tabBarHeight)
     }
 
     @ViewBuilder

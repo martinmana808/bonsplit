@@ -251,7 +251,11 @@ struct TabItemView: View {
                     : TabBarColors.nsColorInactiveText(for: appearance))
                 let iconTint = Color(nsColor: iconTintColor)
                 let faviconImage = renderedFaviconImage ?? tab.iconImageData.flatMap { NSImage(data: $0) }
+                // Chip tabs (color marker) carry their identity in the chip;
+                // the leading icon slot is dropped to give the title the room.
+                let hasColorChip = TabItemStyling.leadingColorHex(tab.title) != nil
 
+                if !hasColorChip {
                 Group {
                     if tab.isLoading {
                         // Slightly smaller than the icon slot so it reads cleaner at tab scale.
@@ -295,6 +299,7 @@ struct TabItemView: View {
                     updateGlobeFallback()
                 }
                 .onChange(of: tab.icon) { _ in updateGlobeFallback() }
+                }
 
                 let (titleDotColor, titleDot, lastFocusedAt, titleRest) = TabItemStyling.splitLeadingMarkers(tab.title)
                 let titleFont = Font.system(size: appearance.tabTitleFontSize, weight: .semibold)
