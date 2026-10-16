@@ -143,19 +143,60 @@ enum TabItemStyling {
         return "\(Int(seconds / 86_400))d"
     }
 
-    /// Age window the chip's gauge spans: the fill is full for the first
-    /// 10 minutes and empty at 14 days, on a log scale so the hours that
-    /// matter get most of the width (about 75% at 1h, 50% at 6h, 35% at a day).
-    static let focusAgeFreshWindow: TimeInterval = 600
-    static let focusAgeEmptyWindow: TimeInterval = 14 * 86_400
+    /// Hour at which a "day" starts for the age gauge. The host's user works
+    /// late, so 03:00 still belongs to the previous day and a pane last used
+    /// at 03:00 drops one step at 05:00, not at midnight.
+    static let focusAgeDayBoundaryHour = 5
+    /// Days (05:00 boundaries) after which the gauge is empty.
+    static let focusAgeEmptyDays = 30
 
-    /// Fraction of the chip still painted with the pane color, 1 (fresh) to
-    /// 0 (two weeks or older).
-    static func focusAgeFill(since lastFocusedAt: Date, now: Date) -> Double {
-        let seconds = max(0, now.timeIntervalSince(lastFocusedAt))
-        guard seconds > focusAgeFreshWindow else { return 1.0 }
-        let progress = log10(seconds / focusAgeFreshWindow) / log10(focusAgeEmptyWindow / focusAgeFreshWindow)
+    /// Number of day boundaries (at `focusAgeDayBoundaryHour`) crossed between
+    /// `lastFocusedAt` and `now`: 0 while both fall in the same 05:00-to-05:00
+    /// day, 1 once a single 05:00 has passed, and so on.
+    static func dayBoundariesCrossed(
+        since lastFocusedAt: Date,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Int {
+        guard now > lastFocusedAt else { return 0 }
+        func dayStart(_ date: Date) -> Date {
+            var start = calendar.startOfDay(for: date)
+            if let shifted = calendar.date(byAdding: .hour, value: focusAgeDayBoundaryHour, to: start), shifted > date {
+                start = calendar.date(byAdding: .day, value: -1, to: start) ?? start
+            }
+            return calendar.date(byAdding: .hour, value: focusAgeDayBoundaryHour, to: start) ?? start
+        }
+        let from = dayStart(lastFocusedAt)
+        let to = dayStart(now)
+        return max(0, calendar.dateComponents([.day], from: from, to: to).day ?? 0)
+    }
+
+    /// Fraction of the chip still painted with the pane color. Full means
+    /// "acted on today" (no 05:00 boundary crossed since the last action);
+    /// after that it steps down once per day on a log scale: 1 day 80%,
+    /// 6 days 43%, 13 days 23%, 20 days 11%, and empty at 30 days. Nothing
+    /// changes inside a day.
+    static func focusAgeFill(since lastFocusedAt: Date, now: Date, calendar: Calendar = .current) -> Double {
+        focusAgeFill(daysCrossed: dayBoundariesCrossed(since: lastFocusedAt, now: now, calendar: calendar))
+    }
+
+    static func focusAgeFill(daysCrossed days: Int) -> Double {
+        guard days > 0 else { return 1.0 }
+        let progress = log10(Double(days + 1)) / log10(Double(focusAgeEmptyDays + 1))
         return max(0.0, 1.0 - min(1.0, progress))
+    }
+
+    /// Tooltip for the age gauge: the exact last-action date plus the day
+    /// count, or a note that nothing is known (empty chip).
+    static func focusAgeTooltip(lastFocusedAt: Date?, now: Date, calendar: Calendar = .current) -> String {
+        guard let lastFocusedAt else { return "No action recorded in this pane" }
+        let days = dayBoundariesCrossed(since: lastFocusedAt, now: now, calendar: calendar)
+        let when = lastFocusedAt.formatted(date: .abbreviated, time: .shortened)
+        switch days {
+        case 0: return "Last action: \(when) (today)"
+        case 1: return "Last action: \(when) (1 day ago)"
+        default: return "Last action: \(when) (\(days) days ago)"
+        }
     }
 
     /// Splits a leading emoji "dot" (e.g. a color-square prefix) off a tab
@@ -311,7 +352,8 @@ struct TabItemView: View {
                     // over the fill, tab-colored text past it) inside a stroke
                     // that keeps the chip's full outline. Re-renders once a minute.
                     TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                        let fill = lastFocusedAt.map { TabItemStyling.focusAgeFill(since: $0, now: timeline.date) } ?? 1.0
+                        // No stamp means nothing is known: draw it empty, never full.
+                        let fill = lastFocusedAt.map { TabItemStyling.focusAgeFill(since: $0, now: timeline.date) } ?? 0.0
                         // On the focused pane's colored strip the chip color is the
                         // strip color, so the text past the fill goes black there.
                         TabAgeGaugeChip(
@@ -321,6 +363,7 @@ struct TabItemView: View {
                             fill: fill,
                             textColorPastFill: accentStripForeground ?? titleDotColor
                         )
+                        .help(TabItemStyling.focusAgeTooltip(lastFocusedAt: lastFocusedAt, now: timeline.date))
                     }
                 } else {
                     HStack(spacing: titleDot == nil ? 0 : 4) {
